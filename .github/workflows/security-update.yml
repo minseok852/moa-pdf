@@ -1,0 +1,33 @@
+name: Verify security dependency update
+on:
+  push:
+    branches: [maintenance/security-dependencies]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Resolve patched dependency lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit
+      - name: Export generated public lockfile
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const encoded = readFileSync('package-lock.json').toString('base64');
+          console.log('MOA_LOCKFILE_BEGIN');
+          for (let i = 0; i < encoded.length; i += 4096) console.log(encoded.slice(i, i + 4096));
+          console.log('MOA_LOCKFILE_END');
+          NODE
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --json
