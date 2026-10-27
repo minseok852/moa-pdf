@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
-import { getDocument, version } from 'pdfjs-dist';
+import { getDocument, version } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 const root=fileURLToPath(new URL('..',import.meta.url));
 const original=await PDFDocument.create();
