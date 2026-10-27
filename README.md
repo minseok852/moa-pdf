@@ -27,6 +27,7 @@ npm run dev
 ```sh
 npm test
 npm run build
+npm run test:pdf
 npm run preview
 ```
 
@@ -80,6 +81,8 @@ npm run preview
 | `src/i18n.tsx`, `src/locales/en.json` | 한국어·영어 문구 |
 | `scripts/prepare-assets.mjs` | PDF 보조 파일·의존성 라이선스 준비 |
 
-GitHub Actions는 설치·테스트·빌드·의존성 보안 검사를 실행합니다. 현재 자동 테스트는 88개입니다. 실제 브라우저 조작 및 배포 응답 헤더 검증은 [점검표](docs/RELEASE_CHECKLIST.md)를 참고하세요.
+GitHub Actions는 설치·테스트·빌드·의존성 보안 검사를 실행합니다. 현재 자동 테스트는 90개이며, 실제 PDF.js 엔진으로 PDF를 읽는 검증도 수행합니다. 실제 브라우저 조작 및 배포 응답 헤더 검증은 [점검표](docs/RELEASE_CHECKLIST.md)를 참고하세요.
 
 문의·피드백: [min85296@gmail.com](mailto:min85296@gmail.com)
+
+보안 의존성은 PDF.js 6.2.108, Vitest 및 @vitest/mocker 5.0.5로 갱신했습니다. 기존 취약점이 있던 tinypool 의존성은 새 테스트 도구에서 제거되었습니다.
