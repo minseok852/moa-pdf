@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.sites-runtime/
+*.local
+test-output/
+
+*.tsbuildinfo
+
+# Local deployment metadata, secrets, logs and generated assets
+.openai/
+.vercel/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+public/pdfjs/
+public/third-party-notices.txt
