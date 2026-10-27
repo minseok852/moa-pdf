@@ -308,5 +308,7 @@
   "확대해도 출력 크기는 바뀌지 않습니다.": "Zooming does not change the output size.",
   "{0}번째 경계 (%)": "Boundary {0} (%)",
   "문의·피드백": "Contact & Feedback",
-  "파일 확장자와 실제 형식이 일치하지 않습니다.": "The file extension does not match its actual format."
+  "파일 확장자와 실제 형식이 일치하지 않습니다.": "The file extension does not match its actual format.",
+  "배": "×",
+  "1~100배 · 입력 후 Enter로 적용": "1–100× · Press Enter to apply"
 }

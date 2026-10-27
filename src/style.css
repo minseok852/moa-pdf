@@ -30,3 +30,5 @@
 html[lang=en] .density-select{width:170px}html[lang=en] .sort-select{width:170px}
 
 footer{flex-wrap:wrap;row-gap:12px}.footer-contact{display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px;color:var(--green);font-size:13px;min-height:32px;text-decoration:underline;text-underline-offset:3px}.footer-contact svg{flex-shrink:0}.footer-contact .contact-email{font-size:12px;overflow-wrap:anywhere}.footer-contact:hover{color:#264b37}@media(max-width:650px){.footer-contact{width:100%}}
+
+.zoom-input{display:inline-flex;align-items:center;gap:4px;border:1px solid #dce2d7;border-radius:7px;background:#fff;padding:0 8px;min-height:38px;color:#48603c;font-size:13px;font-variant-numeric:tabular-nums}.zoom-input input{width:58px;min-width:0;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;text-align:center;padding:7px 0}.zoom-input:focus-within{outline:2px solid #94b697;outline-offset:2px}.zoom-input input:focus-visible{outline:none}

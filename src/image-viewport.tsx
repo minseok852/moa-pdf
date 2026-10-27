@@ -22,7 +22,22 @@ export function ImageViewport({ width, height, children, initialPan = false, out
         left: number;
         top: number;
     } | null>(null);
-    const [size, setSize] = useState({ width: 650, height: 360 }), [zoom, setZoom] = useState(1), [panMode, setPanMode] = useState(initialPan);
+    const [size, setSize] = useState({ width: 650, height: 360 }), [zoom, setZoom] = useState(1), [zoomDraft, setZoomDraft] = useState('1'), [panMode, setPanMode] = useState(initialPan);
+    function changeZoom(value: number) {
+        const next = Math.round(Math.min(100, Math.max(1, value)) * 100) / 100;
+        setZoom(next);
+        setZoomDraft(String(next));
+    }
+    function draftZoom() {
+        const value = Number(zoomDraft.trim().replace(',', '.'));
+        return zoomDraft.trim() && Number.isFinite(value) ? Math.min(100, Math.max(1, value)) : zoom;
+    }
+    function applyZoom() {
+        changeZoom(draftZoom());
+    }
+    function stepZoom(direction: number) {
+        changeZoom(draftZoom() + direction * .5);
+    }
     useEffect(() => { const node = viewport.current!; const observer = new ResizeObserver(() => setSize({ width: node.clientWidth, height: node.clientHeight })); observer.observe(node); return () => observer.disconnect(); }, []);
     const base = Math.min(Math.max(1, size.width - 48) / width, Math.max(1, size.height - 48) / height);
     const scale = base * zoom, planeWidth = width * scale, planeHeight = height * scale;
@@ -30,7 +45,11 @@ export function ImageViewport({ width, height, children, initialPan = false, out
     const widthZoom = Math.min(100, Math.max(1, (size.width - 48) / (width * base)));
     useLayoutEffect(() => { const node = viewport.current; if (!node)
         return; const old = previous.current; const x = old.width ? (node.scrollLeft + node.clientWidth / 2) / old.width : .5, y = old.height ? (node.scrollTop + node.clientHeight / 2) / old.height : .5; node.scrollLeft = x * canvasWidth - node.clientWidth / 2; node.scrollTop = y * canvasHeight - node.clientHeight / 2; previous.current = { width: canvasWidth, height: canvasHeight }; }, [canvasWidth, canvasHeight]);
-    return <div className="image-editor-view"><div className="image-view-controls"><div><button type="button" className="button secondary" onClick={() => setZoom(Math.max(1, zoom / 1.5))} disabled={zoom <= 1} aria-label={t("미리보기 축소")}><ZoomOut size={17}/></button><output aria-label={t("미리보기 확대 배율")}>{t("{0}배", [zoom.toFixed(1)])}</output><button type="button" className="button secondary" onClick={() => setZoom(Math.min(100, zoom * 1.5))} disabled={zoom >= 100} aria-label={t("미리보기 확대")}><ZoomIn size={17}/></button></div><button type="button" className="button secondary" onClick={() => setZoom(1)}><Scan size={16}/>{t("전체 보기")}</button><button type="button" className="button secondary" onClick={() => setZoom(widthZoom)}><Maximize size={16}/>{t("너비 맞춤")}</button><button type="button" className={'button ' + (panMode ? 'primary' : 'secondary')} aria-pressed={panMode} onClick={() => setPanMode(!panMode)}><Hand size={16}/>{panMode ? t("화면 이동 중") : t("화면 이동")}</button></div>
+    return <div className="image-editor-view"><div className="image-view-controls"><div><button type="button" className="button secondary" onClick={() => stepZoom(-1)} disabled={draftZoom() <= 1} aria-label={t("미리보기 축소")}><ZoomOut size={17}/></button><label className="zoom-input"><input type="text" inputMode="decimal" role="spinbutton" aria-label={t("미리보기 확대 배율")} aria-valuemin={1} aria-valuemax={100} aria-valuenow={zoom} title={t("1~100배 · 입력 후 Enter로 적용")} value={zoomDraft} onChange={event => setZoomDraft(event.target.value)} onBlur={applyZoom} onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); applyZoom(); }
+        else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setZoomDraft(String(zoom)); }
+        else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); stepZoom(event.key === 'ArrowUp' ? 1 : -1); }
+    }}/><span>{t("배")}</span></label><button type="button" className="button secondary" onClick={() => stepZoom(1)} disabled={draftZoom() >= 100} aria-label={t("미리보기 확대")}><ZoomIn size={17}/></button></div><button type="button" className="button secondary" onClick={() => changeZoom(1)}><Scan size={16}/>{t("전체 보기")}</button><button type="button" className="button secondary" onClick={() => changeZoom(widthZoom)}><Maximize size={16}/>{t("너비 맞춤")}</button><button type="button" className={'button ' + (panMode ? 'primary' : 'secondary')} aria-pressed={panMode} onClick={() => setPanMode(!panMode)}><Hand size={16}/>{panMode ? t("화면 이동 중") : t("화면 이동")}</button></div>
  <div className={'edit-viewport' + (panMode ? ' panning' : '')} ref={viewport} tabIndex={0} aria-label={t("이미지 편집 화면. 확대 후 스크롤하거나 화면 이동 버튼으로 보이는 위치를 바꿀 수 있습니다.")} onPointerDownCapture={event => { if (!panMode || event.button !== 0)
         return; const node = event.currentTarget; pan.current = { id: event.pointerId, x: event.clientX, y: event.clientY, left: node.scrollLeft, top: node.scrollTop }; node.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation(); }} onPointerMoveCapture={event => { const active = pan.current; if (!active || active.id !== event.pointerId)
         return; event.currentTarget.scrollLeft = active.left + active.x - event.clientX; event.currentTarget.scrollTop = active.top + active.y - event.clientY; event.stopPropagation(); }} onPointerUpCapture={event => { if (pan.current?.id === event.pointerId) {
