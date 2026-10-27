@@ -2,7 +2,7 @@
 
 ## 1. 저장소에 올릴 내용
 
-`package.json`, `package-lock.json`, `src/`, `public/favicon.svg`, `scripts/`, `vercel.json`과 문서·검증 설정을 포함합니다. 이 폴더를 저장소 루트로 올리는 방식을 권장합니다.
+`package.json`, `package-lock.json`, `src/`, `public/ 안의 파비콘·공유 이미지`, `scripts/`, `vercel.json`과 문서·검증 설정을 포함합니다. 이 폴더를 저장소 루트로 올리는 방식을 권장합니다.
 
 `node_modules`, `dist`, 환경 변수, 로컬 배포 설정, 로그, 생성된 PDF 보조 파일은 Git 제외 규칙에 들어 있습니다. 생성 파일을 수동으로 Git에 추가하지 마세요. 사용자의 사진·PDF와 저장 데이터는 소스 폴더에 생성하지 않습니다.
 
@@ -30,6 +30,14 @@
 ## 4. 업데이트
 
 로컬에서 `npm test`와 `npm run build`를 통과시킨 뒤 변경을 push합니다. GitHub Actions의 보안 검사가 실패하면 해당 의존성을 검토하세요. Git 연동 Vercel의 자동 배포와 GitHub 검사 완료 시점은 별개이므로, 검사 통과와 미리보기 확인 후 공개 버전을 정하세요.
+
+## 5. 링크 공유 미리보기
+
+현재 대표 주소는 `https://moa-pdf-weld.vercel.app/`입니다. `index.html`의 canonical·Open Graph·Twitter 카드 태그와 `public/share-card-v1.png`(1200×630 PNG)가 공유 제목·설명·대표 이미지를 제공합니다. 공유용 메타 태그는 자바스크립트 실행 전의 HTML에 포함됩니다. 앱의 언어 선택과 별개로 기본 공유 카드는 한국어와 영문 브랜드를 사용합니다.
+
+도메인을 바꾸면 `index.html` 안의 대표 주소와 이미지의 절대 주소도 함께 바꾸세요. 이미지를 교체할 때는 `share-card-v2.png`처럼 파일명도 갱신하고 이미지 태그를 새 주소로 맞춥니다.
+
+배포 후 페이지 원본에 메타 태그가 있는지, 이미지 주소가 인증 없이 `200`과 `Content-Type: image/png`으로 열리는지 확인합니다. 카카오톡 등에서 이전 미리보기가 유지되면 해당 플랫폼의 공유 디버거에서 캐시를 갱신한 후 링크를 다시 전송하세요. 기존에 전송한 메시지는 새 카드로 바뀌지 않을 수 있습니다.
 
 ## 참고
 
