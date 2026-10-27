@@ -1,9 +1,9 @@
 import { GlobalWorkerOptions, getDocument, PasswordResponses, version } from 'pdfjs-dist';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { PageItem, SourceFile } from './types';
 GlobalWorkerOptions.workerSrc = workerUrl;
-const documents = new Map<string, Promise<PDFDocumentProxy>>();
+const documents = new Map<string, PDFDocumentLoadingTask>();
 export const pdfDocument = (source: SourceFile) => {
   if (!documents.has(source.id)) {
     const assets=new URL(`${import.meta.env.BASE_URL}pdfjs/${version}/`,window.location.href).href;
@@ -12,17 +12,17 @@ export const pdfDocument = (source: SourceFile) => {
       task.destroy();
       if (reason === PasswordResponses.NEED_PASSWORD) console.info('Encrypted PDF was excluded.');
     };
-    documents.set(source.id, task.promise);
+    documents.set(source.id, task);
   }
-  return documents.get(source.id)!;
+  return documents.get(source.id)!.promise;
 };
 export function releasePdfDocument(id: string) {
   const pending = documents.get(id);
-  if (pending) void pending.then(d=>d.destroy()).catch(()=>{});
+  if (pending) void pending.destroy().catch(()=>{});
   documents.delete(id);
 }
 export function clearPdfCache() {
-  for (const doc of documents.values()) void doc.then(d=>d.destroy()).catch(()=>{});
+  for (const task of documents.values()) void task.destroy().catch(()=>{});
   documents.clear();
 }
 export async function readImage(url: string) {
