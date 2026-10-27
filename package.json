@@ -10,7 +10,8 @@
     "test": "vitest run",
     "predev": "node scripts/prepare-assets.mjs",
     "prebuild": "node scripts/prepare-assets.mjs",
-    "check": "tsc -b"
+    "check": "tsc -b",
+    "test:pdf": "node scripts/verify-pdf.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
