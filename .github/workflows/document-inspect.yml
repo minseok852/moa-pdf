@@ -1,0 +1,38 @@
+name: Inspect document conversion engines
+on:
+  push:
+    branches: [maintenance/document-engine-check]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: npm ci
+      - name: Inspect installed runtime and export lockfile
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, existsSync, readdirSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          const root='node_modules/@matbee/libreoffice-converter/';
+          for(const path of ['wasm/soffice.js','wasm/soffice.wasm','wasm/soffice.data','wasm/soffice.worker.js','dist/browser.worker.global.js']){
+            const file=readFileSync(root+path);
+            console.log('ASSET',path,file.length,createHash('sha256').update(file).digest('hex'));
+          }
+          const loader=readFileSync(root+'wasm/soffice.js','utf8');
+          const match=loader.match(/filename:"\/instdir\/program\/versionrc",start:(\d+),end:(\d+)/);
+          if(match)console.log('LO_VERSION',readFileSync(root+'wasm/soffice.data').subarray(+match[1],+match[2]).toString());
+          console.log('PACKAGE_FILES',readdirSync(root));
+          console.log('LOCK_BEGIN');
+          console.log(readFileSync('package-lock.json').toString('base64'));
+          console.log('LOCK_END');
+          JS
+      - run: npm audit --json
