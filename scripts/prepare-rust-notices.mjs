@@ -43,7 +43,7 @@ await Promise.all(Array.from({length:6},async()=>{
   const source=entries(archive),prefix=item.name+'-'+item.version+'/';
   const cargo=source.find(file=>file.name===prefix+'Cargo.toml')?.data.toString()??'';
   const license=cargo.match(/^license\s*=\s*"([^"]+)"/m)?.[1];
-  if(!license||license.split(/[ ()]+/).filter(token=>token&&!['AND','OR','WITH'].includes(token)).some(token=>!accepted.has(token)))throw new Error('Unreviewed crate license: '+item.name+' '+license);
+  if(!license||license.replaceAll('/',' OR ').split(/[ ()]+/).filter(token=>token&&!['AND','OR','WITH'].includes(token)).some(token=>!accepted.has(token)))throw new Error('Unreviewed crate license: '+item.name+' '+license);
   const notices=source.filter(file=>/(?:^|\/)(?:licen[cs]e|copying|notice|copyright|authors)(?:[._-][^/]*)?$/i.test(file.name));
   if(!notices.length)throw new Error('Missing crate copyright/license text: '+item.name+' '+item.version);
   results[index]={...item,license,url,notices:notices.map(file=>'--- '+file.name+' ---\n'+file.data.toString('utf8')).join('\n\n')};
