@@ -33,11 +33,12 @@ function entries(gzip){
  }
  return files;
 }
-const accepted=new Set(['MIT','Apache-2.0','LLVM-exception','MPL-2.0','BSD-2-Clause','BSD-3-Clause','ISC','Zlib','BSL-1.0','Unicode-3.0','Unicode-DFS-2016','CC0-1.0','Unlicense','0BSD']);
-const results=Array(packages.length);let next=0;
+const accepted=new Set(['MIT','MIT-0','Apache-2.0','LLVM-exception','MPL-2.0','BSD-2-Clause','BSD-3-Clause','ISC','Zlib','BSL-1.0','Unicode-3.0','Unicode-DFS-2016','CC0-1.0','Unlicense','0BSD']);
+const results=Array(packages.length),errors=[];let next=0;
 await Promise.all(Array.from({length:6},async()=>{
  while(next<packages.length){
   const index=next++,item=packages[index];
+  try {
   const url='https://static.crates.io/crates/'+item.name+'/'+item.name+'-'+item.version+'.crate';
   const archive=await get(item.name+'-'+item.version+'.crate',url,item.checksum);
   const source=entries(archive),prefix=item.name+'-'+item.version+'/';
@@ -47,8 +48,10 @@ await Promise.all(Array.from({length:6},async()=>{
   const notices=source.filter(file=>/(?:^|\/)(?:licen[cs]e|copying|notice|copyright|authors)(?:[._-][^/]*)?$/i.test(file.name));
   if(!notices.length)throw new Error('Missing crate copyright/license text: '+item.name+' '+item.version);
   results[index]={...item,license,url,notices:notices.map(file=>'--- '+file.name+' ---\n'+file.data.toString('utf8')).join('\n\n')};
+  }catch(error){errors.push(String(error));}
  }
 }));
+if(errors.length){console.error(JSON.stringify({licenseReviewErrors:errors},null,2));throw new Error('Unresolved dependency license review');}
 const header='rhwptopdf 0.2.2 — Rust dependency license notices and source locations\nConservative inventory of all registry packages in the upstream Cargo.lock, including build/target-only packages.\nEngine code is unmodified. Each component retains its own license.\nFor MPL-covered dependencies, the exact .crate source archives below are available under their stated licenses.\n\n';
 const body=results.map(item=>'=== '+item.name+' '+item.version+' ('+item.license+') ===\nSource Code Form: '+item.url+'\nSHA-256: '+item.checksum+'\n\n'+item.notices).join('\n\n');
 writeFileSync(path.join(root,'public','licenses','rhwptopdf-dependencies.txt'),header+body);
