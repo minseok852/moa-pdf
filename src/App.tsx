@@ -15,6 +15,9 @@ import { useEditor } from './store';
 import { importFile, prepareImage, renderPdfPage, clearPdfCache, releasePdfDocument } from './files';
 import { modRotation } from './layout';
 import { LIMITS } from './types';
+import { FILE_ACCEPT, documentFormat, isOfficeDocument } from './document-formats';
+import { disposeDocumentConverters } from './document-converter';
+import { OpenSourceLicenses } from './open-source-licenses';
 import type { ExportPage, PageItem, Settings, SourceFile } from './types';
 const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()));
@@ -35,6 +38,14 @@ export default function App() {
     const input = useRef<HTMLInputElement>(null), cancel = useRef(false), worker = useRef<Worker | null>(null), insertingAt = useRef<number | undefined>(undefined), locked = useRef(false);
     const [busy, setBusy] = useState<Busy | null>(null), [errors, setErrors] = useState<string[]>([]), [notice, setNotice] = useState(''), [draggingFiles, setDraggingFiles] = useState(false), [preview, setPreview] = useState<string | null>(null), [cropId, setCropId] = useState<string | null>(null), [individual, setIndividual] = useState(false), [moveOpen, setMoveOpen] = useState(false), [destination, setDestination] = useState(1), [splitOpen, setSplitOpen] = useState(false), [help, setHelp] = useState(false), [clearOpen, setClearOpen] = useState(false), [result, setResult] = useState<Result | null>(null), [generatedPreview, setGeneratedPreview] = useState<string | null>(null), [outputIndex, setOutputIndex] = useState(0);
     const outputRequest = useRef(0);
+    const importController = useRef<AbortController | null>(null);
+    const officeAllowed = useRef(false), officeResolve = useRef<((allow: boolean) => void) | null>(null);
+    const [officePrompt, setOfficePrompt] = useState(false), [licensesOpen, setLicensesOpen] = useState(false);
+    function resolveOffice(allow: boolean) {
+        if (allow) officeAllowed.current = true;
+        setOfficePrompt(false); officeResolve.current?.(allow); officeResolve.current = null;
+    }
+    useEffect(() => () => { importController.current?.abort(); disposeDocumentConverters(); officeResolve.current?.(false); }, []);
     const [cropReturnId, setCropReturnId] = useState<string | null>(null);
     const backup = useWorkspaceBackup();
     const [density, setDensity] = useState<'compact' | 'normal' | 'large'>('normal');
@@ -73,6 +84,12 @@ export default function App() {
         locked.current = true;
         cancel.current = false;
         setErrors([]);
+        if (!officeAllowed.current && files.some(file => isOfficeDocument(file.name))) {
+            const allow = await new Promise<boolean>(resolve => { officeResolve.current = resolve; setOfficePrompt(true); });
+            if (!allow) { locked.current = false; insertingAt.current = undefined; return; }
+        }
+        importController.current = new AbortController();
+        let converted = false;
         let accepted: PageItem[] = [], acceptedSources: SourceFile[] = [], bytes = totalBytes;
         const failed: string[] = [];
         for (let i = 0; i < files.length; i++) {
@@ -86,29 +103,37 @@ export default function App() {
                     throw new Error('파일당 40 MB를 초과했습니다.');
                 if (bytes + f.size > LIMITS.totalBytes)
                     throw new Error('전체 원본 용량 120 MB를 초과했습니다.');
-                const imported = await importFile(f);
-                if (pages.length + accepted.length + imported.pages.length > LIMITS.pages) {
+                const imported = await importFile(f, {
+                    signal: importController.current.signal,
+                    onProgress: (label, progress) => setBusy({ kind: 'import', label, progress: (i + progress) / files.length })
+                });
+                if (pages.length + accepted.length + imported.pages.length > LIMITS.pages || bytes + imported.source.bytes.length > LIMITS.totalBytes) {
                     releasePdfDocument(imported.source.id);
                     if (imported.source.url)
                         URL.revokeObjectURL(imported.source.url);
-                    throw new Error('총 200쪽까지만 추가할 수 있습니다.');
+                    throw new Error(bytes + imported.source.bytes.length > LIMITS.totalBytes ? '전체 원본 용량 120 MB를 초과했습니다.' : '총 200쪽까지만 추가할 수 있습니다.');
                 }
                 accepted.push(...imported.pages);
                 acceptedSources.push(imported.source);
-                bytes += f.size;
+                bytes += imported.source.bytes.length;
+                converted ||= !!documentFormat(f.name);
             }
             catch (e) {
+                if (importController.current?.signal.aborted || (e instanceof Error && e.message === 'CANCELLED')) { cancel.current = true; break; }
                 failed.push(`${f.name}: ${e instanceof Error ? e.message : '파일을 읽을 수 없습니다.'}`);
             }
         }
         if (accepted.length)
             add(accepted, acceptedSources, insertingAt.current);
         insertingAt.current = undefined;
+        disposeDocumentConverters();
+        importController.current = null;
         setErrors(failed);
         setBusy(null);
         locked.current = false;
         if (accepted.length)
             setNotice(`${accepted.length}쪽을 추가했습니다.${cancel.current ? ' 남은 파일은 취소했습니다.' : ''}`);
+        if (accepted.length && converted && !cancel.current) setNotice('문서를 PDF로 변환해 추가했습니다. 글꼴·표·페이지 나눔을 미리보기에서 확인해 주세요.');
     }
     function chooseFiles(at?: number) { insertingAt.current = at; input.current?.click(); }
     function rotate(ids: string[]) { commit(pages.map(p => ids.includes(p.id) ? { ...p, rotation: modRotation(p.rotation + 90) } : p)); }
@@ -169,7 +194,7 @@ export default function App() {
             locked.current = false;
         }
     }
-    function cancelOperation() { cancel.current = true; if (worker.current) {
+    function cancelOperation() { cancel.current = true; importController.current?.abort(); if (worker.current) {
         (worker.current as Worker & {
             cancel?: () => void;
         }).cancel?.();
@@ -218,7 +243,7 @@ export default function App() {
         setDraggingFiles(false);
         void importFiles([...e.dataTransfer.files]);
     } }}>
- <input ref={input} type="file" accept=".png,.jpg,.jpeg,.pdf" multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { void importFiles([...(e.target.files ?? [])]); e.target.value = ''; }}/>
+ <input ref={input} type="file" accept={FILE_ACCEPT} multiple hidden onChange={(e: ChangeEvent<HTMLInputElement>) => { void importFiles([...(e.target.files ?? [])]); e.target.value = ''; }}/>
  <header className="site-header"><a className="brand" href="./" aria-label={t("모아 PDF 홈")}><span className="brand-mark"><Files size={22} strokeWidth={1.8}/></span><span>{t("모아")}<span className="brand-pdf">PDF</span></span></a><div className="header-center"><span className="live-dot"/>{t("작은 파일들이, 하나의 문서로.")}</div><div className="header-actions"><LanguageSelector /><span className="local-badge"><LockKeyhole size={13}/>{t("내 기기에서 안전하게")}</span><button className="help-button" onClick={() => setHelp(true)}><HelpCircle size={18}/><span>{t("사용 방법")}</span></button></div></header>
  <main className={'main' + (pages.length ? ' editing-workspace' : '')}><section className={'intro' + (pages.length ? ' editing-intro' : '')}><div><div className="eyebrow"><span /> YOUR PAGES, YOUR WAY</div><h1>{pages.length ? <>{t("문서 편집")}{' '}<span>{t("{0}쪽", [pages.length])}</span></> : <>{t("흩어진 페이지를")}{' '}<span>{t("한곳에, 모아.")}</span></>}</h1><p>{pages.length ? t("페이지를 정리하고 출력 모양을 확인하세요.") : <>{t("사진과 PDF를 올리고, 순서를 정리하세요.")}<br className="mobile-break"/>{' '}{t("나만의 문서가 간단하게 완성됩니다.")}</>}</p></div><div className="intro-note"><ShieldCheck size={21}/><div><strong>{t("파일은 이 기기에만 머물러요")}</strong><span>{t("서버 전송 없이 브라우저에서 처리합니다.")}</span></div></div></section>
  <section className="backup-bar" aria-label={t("이 기기에 작업 저장")}><div><label><input type="checkbox" checked={backup.enabled} disabled={!backup.ready || !!busy || backup.restoring} onChange={event => backup.toggle(event.target.checked)}/>{t("이 기기에 작업 임시 저장")}</label><span role="status">{t(backup.status) || (backup.enabled ? t("파일을 추가하면 자동 저장합니다.") : t("선택하면 파일과 편집 내용을 이 기기에 저장합니다."))}</span></div><div>{backup.info && <><span className="saved-info">{t("저장본 {0}쪽 · {1}", [backup.info.pageCount, new Date(backup.info.savedAt).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US')])}</span>{!pages.length && !past.length && <button className="button secondary" disabled={!!busy || backup.restoring} onClick={() => void backup.restore()}>{backup.restoring ? t("복구 중…") : t("저장한 작업 복구")}</button>}<button className="button secondary" disabled={!!busy || backup.restoring} onClick={() => void backup.removeSaved()}>{t("저장본 삭제")}</button></>}</div></section>
@@ -229,16 +254,23 @@ export default function App() {
         commit([...pages].reverse());
     else
         commit([...pages].sort((a, b) => a.sourceName.localeCompare(b.sourceName, locale, { numeric: true }) || a.sourceIndex - b.sourceIndex)); }}><option value="" disabled>{t("정렬 방식")}</option><option value="name">{t("파일명 · 숫자순")}</option><option value="reverse">{t("현재 순서 뒤집기")}</option></select></div>
- {!pages.length ? <><button className={'dropzone ' + (draggingFiles ? 'dragging' : '')} disabled={!!busy || backup.restoring} onClick={() => chooseFiles()}><div className="upload-illustration"><span className="back-paper"><FileText size={30}/></span><span className="front-paper"><FileImage size={33}/></span><span className="upload-plus"><Plus size={18}/></span></div><strong>{t("파일을 여기에 놓아주세요")}</strong><span>{t("또는 클릭해서 파일 선택")}</span><span className="file-types"><b>PNG</b><b>JPG</b><b>PDF</b></span><small>{t("파일당 40 MB · 전체 120 MB · 최대 200쪽")}</small></button><div className="demo-row"><span>{t("먼저 가볍게 둘러볼까요?")}</span><button onClick={() => void demo()} disabled={!!busy || backup.restoring}>{t("샘플로 시작하기")}<ArrowRight size={14}/></button></div><div className="steps"><div><span>01</span><strong>{t("파일 모으기")}</strong><p>{t("사진과 PDF를 한 번에")}</p></div><div><span>02</span><strong>{t("내 방식으로 정리")}</strong><p>{t("순서, 회전, 크기까지")}</p></div><div><span>03</span><strong>{t("하나의 PDF로")}</strong><p>{t("확인하고 내려받기")}</p></div></div></> : <>
+ {!pages.length ? <><button className={'dropzone ' + (draggingFiles ? 'dragging' : '')} disabled={!!busy || backup.restoring} onClick={() => chooseFiles()}><div className="upload-illustration"><span className="back-paper"><FileText size={30}/></span><span className="front-paper"><FileImage size={33}/></span><span className="upload-plus"><Plus size={18}/></span></div><strong>{t("파일을 여기에 놓아주세요")}</strong><span>{t("또는 클릭해서 파일 선택")}</span><span className="file-types"><b>PNG/JPG</b><b>PDF</b><b>HWP/HWPX</b><b>DOCX</b><b>PPTX</b><b>XLSX</b></span><small>{t("파일당 40 MB · 전체 120 MB · 최대 200쪽")}</small></button><p className="document-import-hint">{t("문서 변환은 시험 지원입니다. 글꼴·표·수식·페이지 나눔은 변환 후 확인해 주세요.")}</p><div className="demo-row"><span>{t("먼저 가볍게 둘러볼까요?")}</span><button onClick={() => void demo()} disabled={!!busy || backup.restoring}>{t("샘플로 시작하기")}<ArrowRight size={14}/></button></div><div className="steps"><div><span>01</span><strong>{t("파일 모으기")}</strong><p>{t("사진과 PDF를 한 번에")}</p></div><div><span>02</span><strong>{t("내 방식으로 정리")}</strong><p>{t("순서, 회전, 크기까지")}</p></div><div><span>03</span><strong>{t("하나의 PDF로")}</strong><p>{t("확인하고 내려받기")}</p></div></div></> : <>
 
  <fieldset className="selection-toolbar" disabled={!selected.length || !!busy} aria-label={t("선택한 페이지 작업")}><button onClick={() => rotate(selected)}><RotateCw size={15}/>{t("회전")}</button><button onClick={() => setIndividual(true)}><Settings2 size={15}/>{t("페이지 설정")}</button><button onClick={() => { setDestination(1); setMoveOpen(true); }}><ArrowDownUp size={15}/>{t("이동")}</button><button onClick={() => chooseFiles(pages.findIndex(p => selected.includes(p.id)))}><FolderPlus size={15}/>{t("앞에 삽입")}</button><button disabled={chosen.length !== 1 || chosen[0]?.kind !== 'image'} onClick={() => setSplitOpen(true)} title={t("사진 한 장을 선택하면 나눌 수 있어요")}><Scissors size={15}/>{t("분할")}</button><button className="danger-text" onClick={() => remove(selected)}><Trash2 size={15}/>{t("삭제")}</button><button onClick={() => select([])} aria-label={t("선택 해제")}><X size={15}/></button></fieldset>
  <PageBoard density={density} pages={pages} settings={settings} disabled={!!busy} onCommit={commit} onAdd={() => chooseFiles()} onPreview={setPreview} onCrop={setCropId} onRotate={id => rotate([id])} onDelete={id => remove([id])} onMove={move} onNotice={setNotice}/><div className="editor-bottom"><span><CheckCheck size={14}/>{t("카드 상단을 잡아 이동 · 사진을 누르면 확대")}</span><button onClick={() => setClearOpen(true)} disabled={!!busy}>{t("모두 비우기")}</button></div></>}
  </div><div className="editor-footnote"><LockKeyhole size={13}/><span>{backup.enabled ? (backup.writing ? t("저장 중에는 창을 닫지 마세요.") : t("자동 저장 상태를 확인하고 창을 닫으세요. 브라우저 저장 공간을 지우면 저장본도 삭제됩니다.")) : t("새로고침하거나 창을 닫으면 작업 내용이 사라집니다.")}</span></div></section>
  <aside className="settings-panel" aria-label={t("전체 기본 설정")}>{!mobileSettings && settingsContent}</aside></div>
- <footer><span className="footer-logo">{t("모아PDF")}</span><span>{t("꼭 필요한 페이지를, 가장 간단하게.")}</span><a className="footer-contact" href="mailto:min85296@gmail.com"><Mail size={15} aria-hidden="true"/><span>{t("문의·피드백")}</span><span className="contact-email">min85296@gmail.com</span></a><span className="footer-tag">MADE FOR YOUR EVERYDAY DOCUMENTS</span></footer></main>
+ <footer><span className="footer-logo">{t("모아PDF")}</span><span>{t("꼭 필요한 페이지를, 가장 간단하게.")}</span><a className="footer-contact" href="mailto:min85296@gmail.com"><Mail size={15} aria-hidden="true"/><span>{t("문의·피드백")}</span><span className="contact-email">min85296@gmail.com</span></a><button type="button" className="footer-license" onClick={() => setLicensesOpen(true)}>{t("오픈소스 라이선스")}</button><span className="footer-tag">MADE FOR YOUR EVERYDAY DOCUMENTS</span></footer></main>
  <div className="mobile-action-bar"><div><strong>{t("총 {0}쪽", [pages.length])}</strong><span>{result ? formatBytes(result.bytes) : selected.length ? t("{0}쪽 선택", [selected.length]) : t("편집 후 PDF로 저장")}</span></div><button className="button secondary" onClick={() => setMobileSettings(true)} disabled={!!busy}><Settings2 size={17}/>{t("설정")}</button>{result ? <a className="button primary" href={result.url} download={result.name}><ArrowDownToLine size={17}/>{t("다운로드")}</a> : <button className="button primary" disabled={!pages.length || !!busy} onClick={() => void exportPdf()}><ArrowDownToLine size={17}/>{t("PDF 만들기")}</button>}</div>
+ {licensesOpen && <OpenSourceLicenses onClose={() => setLicensesOpen(false)}/>}
+ {officePrompt && <Modal title={t("오피스 문서를 변환할까요?")} onClose={() => resolveOffice(false)}>
+   <p className="modal-description">{t("DOCX·PPTX·XLSX 변환은 최초에 약 250 MB의 변환 엔진과 글꼴을 내려받습니다. 충분한 메모리와 안정적인 네트워크가 있는 데스크톱 브라우저를 권장합니다.")}</p>
+   <p className="help-note">{t("문서는 이 브라우저에서 처리하며 외부 서버로 업로드하지 않습니다. 원본 대신 변환된 PDF를 편집하고, 임시 저장을 켜면 변환된 PDF가 저장됩니다.")}</p>
+   <p className="help-note">{t("문서 변환은 시험 지원입니다. 대체 글꼴을 사용하므로 표·수식·페이지 나눔이 달라질 수 있습니다. 변환 후 미리보기를 확인해 주세요.")}</p>
+   <div className="modal-footer"><button className="button secondary" onClick={() => resolveOffice(false)}>{t("돌아가기")}</button><button className="button primary" onClick={() => resolveOffice(true)}>{t("엔진을 내려받고 변환")}</button></div>
+ </Modal>}
  {mobileSettings && <Modal title={t("전체 기본 설정")} onClose={() => setMobileSettings(false)}>{settingsContent}<div className="modal-footer"><button className="button secondary" onClick={() => setMobileSettings(false)}>{t("편집으로 돌아가기")}</button></div></Modal>}
- {draggingFiles && <div className="drop-overlay"><Files size={48}/><strong>{t("여기에 놓으면 추가됩니다")}</strong><span>PNG · JPG · JPEG · PDF</span></div>}
+ {draggingFiles && <div className="drop-overlay"><Files size={48}/><strong>{t("여기에 놓으면 추가됩니다")}</strong><span>PNG · JPG · PDF · HWP/HWPX · DOCX · PPTX · XLSX</span></div>}
  {notice && <div className="toast" role="status"><Check size={17}/><span>{t(notice)}</span>{canUndoDelete && <button onClick={() => { undo(); setDeleteHistory(null); setNotice('삭제한 페이지를 복구했습니다.'); }} disabled={!!busy}>{t("되돌리기")}</button>}</div>}
  {busy && <div className="busy-panel" role="status"><LoaderCircle size={19} className="spin"/><div><strong>{t(busy.label)}</strong><progress max="1" value={busy.progress}/></div><button onClick={cancelOperation}>{t("취소")}</button></div>}
  {current && <PagePreviewDialog page={current} pages={pages} sources={sources} settings={settings} onClose={() => setPreview(null)} onNavigate={setPreview} onRotate={() => rotate([current.id])} onCrop={() => { setCropReturnId(current.id); setPreview(null); setCropId(current.id); }} onSettings={() => { select([current.id]); setPreview(null); setIndividual(true); }}/>}
@@ -252,7 +284,7 @@ export default function App() {
  {clearOpen && <Modal title={t("모든 페이지를 비울까요?")} onClose={() => setClearOpen(false)}><p className="modal-description">{t("추가한 파일과 편집 이력이 모두 사라집니다.")}</p><div className="modal-footer"><button className="button secondary" onClick={() => setClearOpen(false)}>{t("돌아가기")}</button><button className="button danger" onClick={() => { for (const s of Object.values(sources))
         if (s.url)
             URL.revokeObjectURL(s.url); clearPdfCache(); reset(); void backup.removeSaved(); setClearOpen(false); }}>{t("모두 비우기")}</button></div></Modal>}
- {help && <Modal title={t("모아PDF 사용 방법")} onClose={() => setHelp(false)}><ol className="help-list"><li><strong>{t("파일을 모아주세요")}</strong><p>{t("PNG, JPG, JPEG, PDF를 함께 선택합니다. PDF는 낱장으로 펼쳐집니다.")}</p></li><li><strong>{t("페이지를 정리하세요")}</strong><p>{t("체크박스 밖의 카드 상단을 잡아 끌거나 화살표로 순서를 바꿉니다. 선택한 여러 쪽은 함께 끌 수 있어요. 체크박스로 여러 쪽을 선택해 회전·이동·삭제할 수 있어요.")}</p></li><li><strong>{t("규격을 맞춰주세요")}</strong><p>{t("전체 기본 설정에서 용지와 여백을 정합니다. 모바일에서는 하단 설정 버튼으로 열 수 있어요. 선택한 페이지는 개별 설정도 가능해요. ‘페이지 채우기’는 내용이 잘릴 수 있습니다.")}</p></li><li><strong>{t("확인하고 내려받으세요")}</strong><p>{t("PDF를 만든 뒤 완성된 PDF 미리보기를 확인합니다. 설정을 바꾸면 다시 만들 수 있어요.")}</p></li></ol><p className="help-note">{t("비밀번호 PDF, PDF 본문 편집·OCR, 목표 용량 보장은 아직 지원하지 않습니다. 원본 크기 유지 시 PDF 링크·주석은 사본으로 복사되지만, 용지 통일 시 주석·양식은 보존되지 않을 수 있습니다.")}</p><p className="help-note">{t("Ctrl+Z 실행 취소 · Ctrl+Shift+Z 다시 실행 · Ctrl+A 전체 선택. 카드 상단 이동 버튼에 초점을 둔 후 Space와 방향키로도 정렬할 수 있습니다.")}</p></Modal>}
+ {help && <Modal title={t("모아PDF 사용 방법")} onClose={() => setHelp(false)}><ol className="help-list"><li><strong>{t("파일을 모아주세요")}</strong><p>{t("사진·PDF·HWP·HWPX·DOCX·PPTX·XLSX를 함께 선택합니다. 문서는 PDF로 변환해 낱장으로 펼칩니다.")}</p></li><li><strong>{t("페이지를 정리하세요")}</strong><p>{t("체크박스 밖의 카드 상단을 잡아 끌거나 화살표로 순서를 바꿉니다. 선택한 여러 쪽은 함께 끌 수 있어요. 체크박스로 여러 쪽을 선택해 회전·이동·삭제할 수 있어요.")}</p></li><li><strong>{t("규격을 맞춰주세요")}</strong><p>{t("전체 기본 설정에서 용지와 여백을 정합니다. 모바일에서는 하단 설정 버튼으로 열 수 있어요. 선택한 페이지는 개별 설정도 가능해요. ‘페이지 채우기’는 내용이 잘릴 수 있습니다.")}</p></li><li><strong>{t("확인하고 내려받으세요")}</strong><p>{t("PDF를 만든 뒤 완성된 PDF 미리보기를 확인합니다. 설정을 바꾸면 다시 만들 수 있어요.")}</p></li></ol><p className="help-note">{t("비밀번호 PDF, PDF 본문 편집·OCR, 목표 용량 보장은 아직 지원하지 않습니다. 원본 크기 유지 시 PDF 링크·주석은 사본으로 복사되지만, 용지 통일 시 주석·양식은 보존되지 않을 수 있습니다.")}</p><p className="help-note">{t("Ctrl+Z 실행 취소 · Ctrl+Shift+Z 다시 실행 · Ctrl+A 전체 선택. 카드 상단 이동 버튼에 초점을 둔 후 Space와 방향키로도 정렬할 수 있습니다.")}</p></Modal>}
  {generatedPreview && result && <Modal title={t("완성된 PDF 확인")} wide onClose={closeOutputPreview}><div className="preview-meta"><span>{result.name}</span><span>{t("{0}쪽 · {1}", [result.count, formatBytes(result.bytes)])}</span></div><div className="generated-preview">{generatedPreview === 'loading' ? <LoaderCircle className="spin"/> : <OutputPreview url={generatedPreview}/>}</div><div className="modal-footer"><div className="preview-nav"><IconButton icon={ChevronLeft} label={t("결과 이전 페이지")} disabled={outputIndex === 0 || generatedPreview === 'loading'} onClick={() => void inspectOutput(outputIndex - 1)}/><span>{outputIndex + 1} / {result.count}</span><IconButton icon={ChevronRight} label={t("결과 다음 페이지")} disabled={outputIndex === result.count - 1 || generatedPreview === 'loading'} onClick={() => void inspectOutput(outputIndex + 1)}/></div><a className="button primary" href={result.url} download={result.name}><ArrowDownToLine size={16}/>{t("다운로드")}</a></div></Modal>}
  </div>;
 }

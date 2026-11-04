@@ -1,0 +1,49 @@
+Moa PDF — document conversion software and font sources
+
+The document conversion engines are distributed unmodified. HTTP gzip compression changes
+transport encoding only. Our independent worker bootstraps live in public/document-workers/
+in https://github.com/minseok852/moa-pdf and are separate from the upstream engine files.
+The licenses here apply to their respective components, not automatically to all Moa PDF code.
+They do not grant rights to documents uploaded by users.
+
+1. rhwptopdf 0.2.2
+   Copyright (c) 2026 sanguneo.
+   MIT for original code; Apache-2.0 for modules derived from rhwp.
+   Original source: https://github.com/sanguneo/rhwptopdf/tree/v0.2.2
+   Source archive: https://github.com/sanguneo/rhwptopdf/archive/refs/tags/v0.2.2.tar.gz
+   Upstream donor: https://github.com/edwardkim/rhwp
+   Full license and attribution: rhwptopdf-LICENSE.txt and rhwptopdf-NOTICE.txt
+   No Hancom proprietary fonts or local operating-system fonts are redistributed.
+
+2. @matbee/libreoffice-converter 2.7.2 and LibreOffice WebAssembly
+   License: Mozilla Public License 2.0; bundled components retain their own notices.
+   Wrapper and build patches: https://github.com/matbeedotcom/libreoffice-document-converter/tree/v2.7.2
+   Source archive: https://github.com/matbeedotcom/libreoffice-document-converter/archive/refs/tags/v2.7.2.tar.gz
+   Package: https://www.npmjs.com/package/@matbee/libreoffice-converter/v/2.7.2
+   Exact bundled LibreOffice buildid (read from the executable's versionrc):
+     d1c9e0e4e1ddeb24fe8f93e56860b3765043f8b1
+   LibreOffice Source Code Form under MPL-2.0:
+     https://github.com/LibreOffice/core/tree/d1c9e0e4e1ddeb24fe8f93e56860b3765043f8b1
+     https://github.com/LibreOffice/core/archive/d1c9e0e4e1ddeb24fe8f93e56860b3765043f8b1.tar.gz
+   Build instructions and modifications:
+     https://github.com/matbeedotcom/libreoffice-document-converter/tree/v2.7.2/build
+     https://github.com/matbeedotcom/libreoffice-document-converter/blob/v2.7.2/docs/BUILDING.md
+   Full license: MPL-2.0.txt
+   Original LibreOffice copyright and bundled third-party notices: libreoffice-NOTICES.html
+   Upstream notices source (copied without translation or alteration):
+     https://github.com/LibreOffice/core/blob/d1c9e0e4e1ddeb24fe8f93e56860b3765043f8b1/readlicense_oo/license/license.xml
+   Asset hashes and executable source revision: /documents/asset-manifest.json
+   You may obtain, use and modify the MPL-covered source under the MPL-2.0.
+   No additional Moa PDF terms restrict those rights.
+   Transitive JavaScript dependency notices (including Zod): /third-party-notices.txt
+
+3. Noto Sans KR and Noto Serif KR
+   Copyright holders and full terms are preserved in NotoSansKR-OFL.txt and NotoSerifKR-OFL.txt.
+   License: SIL Open Font License 1.1.
+   Unmodified Korean-subset OTF fonts (regular weight).
+   Source: https://github.com/notofonts/noto-cjk/tree/f8d157532fbfaeda587e826d4cd5b21a49186f7c
+   Font paths: Sans/SubsetOTF/KR/NotoSansKR-Regular.otf
+               Serif/SubsetOTF/KR/NotoSerifKR-Regular.otf
+
+Existing npm dependencies, including React, PDF.js and pdf-lib:
+   /third-party-notices.txt

@@ -16,3 +16,9 @@ test-output/
 coverage/
 public/pdfjs/
 public/third-party-notices.txt
+
+# Verified, generated document engines and download cache
+.document-cache/
+public/documents/
+public/licenses/libreoffice-NOTICES.html
+public/licenses/rhwptopdf-dependencies.txt

@@ -1,3 +1,4 @@
+import './prepare-document-assets.mjs';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,5 +28,7 @@ for(const [relative,entry] of Object.entries(lock.packages)){
  notices.push(`\n=== ${metadata.name} ${metadata.version} (${metadata.license??'see license text'}) ===\n`);
  for(const name of readdirSync(directory).filter(name=>/^(?:licen[cs]e|copying|notice)(?:\.[a-z]+)?$/i.test(name)))notices.push(readFileSync(path.join(directory,name),'utf8'));
 }
+notices.push('\n=== Document conversion engines and fonts ===\nSee /licenses/SOURCES.txt, /licenses/rhwptopdf-LICENSE.txt, /licenses/rhwptopdf-NOTICE.txt, /licenses/MPL-2.0.txt, /licenses/libreoffice-NOTICES.html and the font OFL notices.\n');
+notices.push(readFileSync(path.join(root,'public','licenses','MPL-2.0.txt'),'utf8'));
 writeFileSync(path.join(root,'public','third-party-notices.txt'),notices.join('\n'));
 console.log(`Prepared PDF.js ${pdfPackage.version} local assets and third-party notices.`);

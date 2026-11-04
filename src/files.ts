@@ -1,7 +1,11 @@
 import { GlobalWorkerOptions, getDocument, PasswordResponses, version } from 'pdfjs-dist';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { LIMITS } from './types';
 import type { PageItem, SourceFile } from './types';
+import { documentFormat } from './document-formats';
+import { convertDocument } from './document-converter';
+import type { ImportOptions } from './document-converter';
 GlobalWorkerOptions.workerSrc = workerUrl;
 const documents = new Map<string, PDFDocumentLoadingTask>();
 export const pdfDocument = (source: SourceFile) => {
@@ -39,9 +43,19 @@ export async function renderPdfPage(source: SourceFile, index: number, maxSize =
   await page.render({ canvasContext: surface.getContext('2d')!, viewport, canvas: surface, background: 'rgb(255,255,255)' }).promise;
   return { url: surface.toDataURL('image/jpeg', .88), width: base.width, height: base.height };
 }
-export async function importFile(file: File): Promise<{ source: SourceFile; pages: PageItem[] }> {
+export async function importFile(file: File, options: ImportOptions = {}): Promise<{ source: SourceFile; pages: PageItem[] }> {
+  if (options.signal?.aborted) throw new Error('CANCELLED');
+  if (file.size > LIMITS.fileBytes) throw new Error('파일당 40 MB를 초과했습니다.');
+  if (documentFormat(file.name)) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const pdf = await convertDocument(bytes, file.name, options);
+    const imported = await importFile(new File([pdf.slice().buffer], file.name + '.pdf', { type: 'application/pdf' }), options);
+    imported.source.name = file.name;
+    imported.pages = imported.pages.map(page => ({ ...page, sourceName: file.name }));
+    return imported;
+  }
   const ext = file.name.split('.').at(-1)?.toLowerCase();
-  if (!['pdf', 'png', 'jpg', 'jpeg'].includes(ext ?? '')) throw new Error('PNG, JPG, JPEG, PDF 파일을 선택해 주세요.');
+  if (!['pdf', 'png', 'jpg', 'jpeg'].includes(ext ?? '')) throw new Error('PNG, JPG, JPEG, PDF, HWP, HWPX, DOCX, PPTX, XLSX 파일을 선택해 주세요.');
   const bytes = new Uint8Array(await file.arrayBuffer());
   const png=[137,80,78,71,13,10,26,10];
   const valid=ext==='pdf'?new TextDecoder('latin1').decode(bytes.subarray(0,1024)).includes('%PDF-'):ext==='png'?png.every((value,index)=>bytes[index]===value):bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
@@ -58,6 +72,7 @@ export async function importFile(file: File): Promise<{ source: SourceFile; page
     if (doc.numPages > 200) throw new Error('한 PDF는 최대 200쪽까지 불러올 수 있습니다.');
     const pages: PageItem[] = [];
     for (let i = 0; i < doc.numPages; i++) {
+      if (options.signal?.aborted) throw new Error('CANCELLED');
       const preview = await renderPdfPage(source, i, 330);
       pages.push({ ...base, id: crypto.randomUUID(), sourceIndex: i, width: preview.width, height: preview.height, thumbnail: preview.url });
     }
@@ -67,6 +82,7 @@ export async function importFile(file: File): Promise<{ source: SourceFile; page
   const objectUrl = URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: source.mime }));
   try {
     const image = await readImage(objectUrl);
+    if (options.signal?.aborted) throw new Error('CANCELLED');
     if (image.naturalWidth * image.naturalHeight > 60_000_000) throw new Error('이미지가 너무 큽니다. 6,000만 화소 이하로 줄여 주세요.');
     const canvas = document.createElement('canvas');
     const scale = Math.min(360 / Math.max(image.naturalWidth, image.naturalHeight), 1);

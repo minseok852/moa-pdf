@@ -7,7 +7,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,4 +20,6 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:pdf
+      - run: npm run test:documents
+      - run: node scripts/check-document-security.mjs
       - run: npm audit
